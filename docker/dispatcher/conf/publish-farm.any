@@ -1,0 +1,81 @@
+# Dispatcher farm for the Publish tier (1:1 pattern — one farm, one render).
+# Security model: deny by default, allow only what the site needs.
+/farms
+{
+  /publishfarm
+  {
+    /clientheaders
+    {
+      "*"
+    }
+    /virtualhosts
+    {
+      "*"
+    }
+    /renders
+    {
+      /rend01
+      {
+        # In docker-compose this resolves to the publish service;
+        # on AWS the paired Publish instance IP is templated in.
+        /hostname "${PUBLISH_HOST}"
+        /port "${PUBLISH_PORT}"
+        /timeout "10000"
+      }
+    }
+    /filter
+    {
+      # Deny everything…
+      /0001 { /type "deny"  /glob "*" }
+      # …then allow site content and client libraries.
+      # NOTE: use /url (raw request URI), not /path. With
+      # DispatcherUseProcessedURL On the proxied clientlib URLs
+      # (/etc.clientlibs/*) are decomposed on the dot in "etc.clientlibs"
+      # and never match a /path glob — the requests get blocked. /url
+      # matches the request URI verbatim and is what the Dispatcher SDK uses.
+      /0010 { /type "allow" /url "/content/*" }
+      /0020 { /type "allow" /url "/etc.clientlibs/*" }
+      /0030 { /type "allow" /url "/content/dam/*" }
+      # Root redirect target used by the demo site
+      /0040 { /type "allow" /url "/" }
+      # Explicitly block sensitive paths even if allowed above
+      /0100 { /type "deny"  /path "/crx/*" }
+      /0101 { /type "deny"  /path "/system/*" }
+      /0102 { /type "deny"  /url  "*.json" }
+      /0103 { /type "deny"  /selectors '(feed|rss|pages|languages|blueprint|infinity|tidy|sysview|docview|query|jcr:content)[\.]?.*' /extension '(json|xml|html)' }
+    }
+    /cache
+    {
+      /docroot "/var/cache/dispatcher"
+      /statfileslevel "2"
+      /serveStaleOnError "1"
+      /allowAuthorized "0"
+      /rules
+      {
+        /0000 { /glob "*" /type "allow" }
+      }
+      /invalidate
+      {
+        /0000 { /glob "*" /type "deny" }
+        /0001 { /glob "*.html" /type "allow" }
+        /0002 { /glob "/etc.clientlibs/*" /type "allow" }
+      }
+      # Only the paired Publish node may flush this cache (DISP-1040, 4.3.8+).
+      # allowedClients matches the CLIENT IP — set FLUSH_ALLOWED_IP per env:
+      # local compose = container subnet glob; AWS = the paired Publish IP.
+      /allowedClients
+      {
+        /0000 { /glob "*" /type "deny" }
+        /0001 { /glob "${FLUSH_ALLOWED_IP}" /type "allow" }
+      }
+    }
+    /statistics
+    {
+      /categories
+      {
+        /html { /glob "*.html" }
+        /others { /glob "*" }
+      }
+    }
+  }
+}

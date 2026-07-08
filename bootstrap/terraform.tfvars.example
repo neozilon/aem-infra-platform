@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and adjust. Do NOT put the token here — pass it via
+# the environment: export TF_VAR_github_token=ghp_xxx  (or GITHUB_TOKEN).
+# terraform.tfvars is gitignored by the repo-root .gitignore.
+
+github_owner    = "your-github-username"
+repository_name = "aem-infra-platform"
+# repository_visibility = "private"   # public avoids the paid-plan requirement
+                                      # for branch protection + environments
+
+# Who may approve stage/prod deployments (objective O4). Leave empty to create
+# the environments now and add reviewers later.
+# environment_reviewers = ["your-github-username"]
+
+# Per-environment AWS OIDC role ARNs get wired in once the AWS account exists
+# (Phase 4+). ARNs are not secret, so they go in variables:
+# environment_variables = {
+#   dev   = { AWS_ROLE_ARN = "arn:aws:iam::111111111111:role/gha-aem-dev" }
+#   stage = { AWS_ROLE_ARN = "arn:aws:iam::111111111111:role/gha-aem-stage" }
+#   prod  = { AWS_ROLE_ARN = "arn:aws:iam::111111111111:role/gha-aem-prod" }
+# }

@@ -1,0 +1,63 @@
+# Local AEM stack — same logical topology as one cloud environment:
+#   author (4502) ── replication ──► publish (4503) ◄── dispatcher (8080)
+# Run from the repo root:  docker compose -f docker/docker-compose.yml up -d --build
+name: aem-local
+
+services:
+  author:
+    build:
+      context: ..
+      dockerfile: docker/aem/Dockerfile
+    image: aem-local/aem:6.6.0
+    container_name: aem-author
+    environment:
+      AEM_RUNMODE: author
+      AEM_ENV_RUNMODE: dev
+      AEM_PORT: "4502"
+      AEM_JVM_OPTS: "-XX:+UseG1GC -Xms1024m -Xmx4096m -Djava.awt.headless=true"
+    ports:
+      - "4502:4502"
+    volumes:
+      - author-repo:/opt/aem/crx-quickstart
+    restart: unless-stopped
+
+  publish:
+    build:
+      context: ..
+      dockerfile: docker/aem/Dockerfile
+    image: aem-local/aem:6.6.0
+    container_name: aem-publish
+    environment:
+      AEM_RUNMODE: publish
+      AEM_ENV_RUNMODE: dev
+      AEM_PORT: "4503"
+      AEM_JVM_OPTS: "-XX:+UseG1GC -Xms1024m -Xmx3072m -Djava.awt.headless=true"
+    ports:
+      - "4503:4503"
+    volumes:
+      - publish-repo:/opt/aem/crx-quickstart
+    restart: unless-stopped
+
+  dispatcher:
+    build:
+      context: ..
+      dockerfile: docker/dispatcher/Dockerfile
+    image: aem-local/dispatcher:4.3.8
+    container_name: aem-dispatcher
+    environment:
+      PUBLISH_HOST: publish
+      PUBLISH_PORT: "4503"
+      # compose default bridge subnet — restricted to the paired Publish IP on AWS
+      FLUSH_ALLOWED_IP: "172.*"
+    ports:
+      - "8080:80"
+    volumes:
+      - dispatcher-cache:/var/cache/dispatcher
+    depends_on:
+      - publish
+    restart: unless-stopped
+
+volumes:
+  author-repo:
+  publish-repo:
+  dispatcher-cache:

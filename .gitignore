@@ -1,0 +1,8 @@
+binaries/
+*.jar
+license.properties
+*.tfstate*
+.terraform/
+*.tfvars.secret
+.DS_Store
+**/.DS_Store

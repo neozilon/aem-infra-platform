@@ -1,0 +1,17 @@
+flowchart LR
+    token[GitHub token] --> boot[bootstrap.sh<br/>Terraform github provider]
+    boot --> repo[Repo created:<br/>branches, protection,<br/>environments, secrets]
+
+    repo --> pr[Pull request]
+    pr --> ci[ci.yml<br/>fmt · validate · tflint · checkov · mvn verify]
+    ci --> plan[deploy-infra.yml<br/>terraform plan per env]
+    plan --> merge{Merge to main}
+    merge --> dev[Apply DEV<br/>automatic]
+    dev --> stage[Apply STAGE<br/>manual approval]
+    stage --> prod[Apply PROD<br/>manual approval]
+
+    merge --> app[deploy-app.yml<br/>mvn build → content packages<br/>→ Author + Publish]
+    app --> conf[configure.yml<br/>replication agents · flush<br/>· hardening checks]
+    conf --> demo[Demo site live<br/>through Dispatcher]
+
+    oidc[AWS OIDC federation<br/>no stored keys] -.-> dev & stage & prod

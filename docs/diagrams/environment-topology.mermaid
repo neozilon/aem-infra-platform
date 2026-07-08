@@ -1,0 +1,38 @@
+flowchart TB
+    subgraph internet[Internet]
+        users[Visitors]
+        authors[Content authors]
+    end
+
+    subgraph vpc["AWS VPC — one per environment (DEV / STAGE / PROD)"]
+        subgraph public[Public subnets]
+            alb[Application Load Balancer]
+            nat[NAT Gateway]
+        end
+        subgraph private[Private subnets]
+            author["AEM Author<br/>EC2 :4502"]
+            subgraph pair1["Publish pair 1"]
+                disp1["Dispatcher 1<br/>Apache + module :80"]
+                pub1["AEM Publish 1<br/>:4503"]
+            end
+            subgraph pairN["Publish pair N (scaled 1:1)"]
+                dispN["Dispatcher N"]
+                pubN["AEM Publish N"]
+            end
+        end
+        s3[(S3: AEM binaries,<br/>backups, artifacts)]
+        dlm[DLM snapshot policy]
+        ssm[SSM Session Manager]
+    end
+
+    users -->|HTTPS| alb
+    authors -->|HTTPS host rule| alb
+    alb --> disp1 & dispN
+    alb -->|author.env.domain| author
+    disp1 --> pub1
+    dispN --> pubN
+    author -->|replication| pub1 & pubN
+    pub1 -.->|cache flush| disp1
+    pubN -.->|cache flush| dispN
+    author & pub1 & pubN -.->|bootstrap pull| s3
+    dlm -.->|daily snapshots| author
