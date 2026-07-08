@@ -50,8 +50,13 @@ los `*.tfvars.secret` están excluidos por `.gitignore`.
 - Pruebas del envoltorio: `bootstrap.sh -h` y validación de argumentos
   (falta de *owner*) correctas.
 
-Queda **pendiente la ejecución real** contra GitHub, que requiere el token de
-Fede; la infraestructura de código está completa y validada.
+**Ejecución real (2026-07-08):** con el token de Fede se creó el repositorio
+`github.com/neozilon/aem-infra-platform` (público) y se verificó vía API:
+protección de `main` (1 aprobación), entornos `dev`/`stage`/`prod` con
+`stage`/`prod` exigiendo a `neozilon` como revisor, y las variables de Actions
+(`AEM_VERSION`, `DISPATCHER_VERSION`, `JAVA_VERSION`, `AWS_REGION`). Un segundo
+`terraform plan` no reporta cambios (idempotencia). El código de la plataforma
+se subió a `origin/main`.
 
 ## Incidencias y decisiones técnicas
 
@@ -62,10 +67,17 @@ Fede; la infraestructura de código está completa y validada.
   `sensitive` porque las claves de instancia quedarían expuestas. Se resuelve
   envolviendo los *nombres* de *secret* (que no son sensibles) con
   `nonsensitive()` y obteniendo cada valor desde la variable dentro del recurso.
+- **Protección de ramas y *scopes* del token:** los recursos de protección de
+  ramas del *provider* de GitHub (`github_branch_protection` y `_v3`) ejecutan
+  consultas GraphQL que exigen el *scope* `read:org`, incompatible con un token
+  mínimo `repo+workflow`. Para preservar la premisa de O1 («solo un token») la
+  protección se aplica con una llamada REST idempotente (`null_resource` +
+  `curl PUT`), que funciona con `repo`. Además GitHub rechaza variables de
+  Actions con valor vacío, por lo que se filtran.
 - **Plan gratuito de GitHub:** la protección de ramas y los entornos en
   repositorios **privados** exigen un plan de pago. Como el repositorio no
-  contiene binarios licenciados (están *gitignored*), puede crearse **público**
-  en plan gratuito; la visibilidad es una variable (`repository_visibility`).
+  contiene binarios licenciados (están *gitignored*), se creó **público**;
+  la visibilidad es una variable (`repository_visibility`).
 
 ## Resultado
 

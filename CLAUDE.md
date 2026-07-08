@@ -19,8 +19,8 @@ University final project (Fede Arriola). Automated provisioning + initial deploy
   - `./scripts/configure-replication.sh` → author→publish agent test SUCCEEDED, dispatcher flush agent created
   - http://localhost:8080/content/aemdemo/us/en.html + all clientlibs render 200 through the dispatcher
   - Dispatcher filter fix: clientlibs were `blocked` under `/path "/etc.clientlibs/*"`; switched to `/url` (see gotcha) and rebuilt the image
-- Phase 3 CODE COMPLETE (not yet executed — needs Fede's GitHub token): `bootstrap/` GitHub-provider Terraform + `bootstrap.sh` one-command wrapper. Creates repo + branch protection + dev/stage/prod environments (stage/prod gated) + Actions variables/secrets. `terraform fmt`/`validate` pass clean. Run: `GITHUB_TOKEN=ghp_xxx ./bootstrap/bootstrap.sh -o <owner>`
-- NEXT: execute Phase 3 once token is available; then Phase 4 (Terraform modules: network, binaries, author, publish-pair, alb, backup) per `docs/PLAN.md` §5
+- Phase 3 DONE (executed 2026-07-08): `bootstrap/` created **github.com/neozilon/aem-infra-platform** (public) with branch protection (1 approval), dev/stage/prod environments (stage+prod gated with `neozilon` reviewer), Actions variables (AEM_VERSION/DISPATCHER_VERSION/JAVA_VERSION/AWS_REGION). Local git initialised; code pushed to `origin/main`. `terraform plan` idempotent (no changes). Re-run: `GITHUB_TOKEN=ghp_xxx ./bootstrap/bootstrap.sh -o neozilon` (visibility=public, reviewers set via TF_VARs — see gotcha)
+- NEXT: Phase 4 (Terraform modules: network, binaries, author, publish-pair, alb, backup) per `docs/PLAN.md` §5
 
 ## Environment gotchas (hard-won, respect these)
 
@@ -36,6 +36,8 @@ University final project (Fede Arriola). Automated provisioning + initial deploy
 - Terraform install: core `brew install terraform` is gone (HashiCorp BSL). Use `brew tap hashicorp/tap && brew install hashicorp/tap/terraform` (installed: 1.15.7). GitHub provider = `integrations/github ~> 6.2`
 - GitHub free plan does NOT allow branch protection / environments on **private** repos — bootstrap defaults to private; set `repository_visibility = "public"` on free (no licensed binaries are ever committed, so public is safe)
 - Terraform `for_each` cannot iterate a `sensitive` variable directly — wrap the keys in `nonsensitive()` and pull each value from the variable inside the resource (see `bootstrap/main.tf` secret resources)
+- GitHub provider branch-protection resources (`github_branch_protection` AND `_v3`) issue GraphQL actor-`id` queries needing `read:org` scope — they FAIL with a plain `repo+workflow` token. bootstrap sets branch protection via a `null_resource` REST PUT instead (works with repo scope). Empty-valued Actions variables are rejected by GitHub (skip them). If a failed apply leaves `github_branch_protection.default` in state, `terraform state rm` it or every later refresh errors on read:org
+- Pushing to the bootstrapped repo: branch protection blocks force-push even for admins; local git init has history unrelated to GitHub's auto-init README. Reconcile with `git merge -s ours --allow-unrelated-histories FETCH_HEAD` then a normal push (admin bypasses the PR rule with enforce_admins=false)
 
 ## Commands
 
