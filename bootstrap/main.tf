@@ -57,22 +57,48 @@ resource "github_repository_vulnerability_alerts" "platform" {
 
 # --- Branch protection on the default branch --------------------------------
 
-resource "github_branch_protection" "default" {
-  repository_id  = github_repository.platform.node_id
-  pattern        = var.default_branch
-  enforce_admins = var.enforce_admins
-
-  required_pull_request_reviews {
-    required_approving_review_count = var.required_pr_approvals
-    dismiss_stale_reviews           = true
+# Applied via the REST API (idempotent PUT) rather than the github provider's
+# branch-protection resources: both github_branch_protection (GraphQL) and
+# github_branch_protection_v3 resolve actor 'id' fields that require the
+# read:org scope, which a minimal repo+workflow token does not have. Keeping
+# this a REST call preserves the "given only a repo token" property of O1 while
+# staying inside `terraform apply`.
+resource "null_resource" "branch_protection" {
+  triggers = {
+    owner          = var.github_owner
+    repo           = github_repository.platform.name
+    branch         = var.default_branch
+    approvals      = tostring(var.required_pr_approvals)
+    enforce_admins = tostring(var.enforce_admins)
+    status_checks  = jsonencode(var.required_status_checks)
   }
 
-  dynamic "required_status_checks" {
-    for_each = length(var.required_status_checks) > 0 ? [1] : []
-    content {
-      strict   = true
-      contexts = var.required_status_checks
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      GH_TOKEN      = var.github_token
+      OWNER         = var.github_owner
+      REPO          = github_repository.platform.name
+      BRANCH        = var.default_branch
+      APPROVALS     = tostring(var.required_pr_approvals)
+      ENFORCE       = tostring(var.enforce_admins)
+      STATUS_CHECKS = jsonencode(var.required_status_checks)
     }
+    command = <<-EOT
+      set -euo pipefail
+      if [ "$STATUS_CHECKS" != "[]" ]; then
+        rsc="{\"strict\":true,\"contexts\":$STATUS_CHECKS}"
+      else
+        rsc="null"
+      fi
+      curl -sf -X PUT \
+        -H "Authorization: Bearer $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/$OWNER/$REPO/branches/$BRANCH/protection" \
+        -d "{\"required_status_checks\":$rsc,\"enforce_admins\":$ENFORCE,\"required_pull_request_reviews\":{\"dismiss_stale_reviews\":true,\"required_approving_review_count\":$APPROVALS},\"restrictions\":null}" \
+        > /dev/null
+      echo "branch protection applied to $OWNER/$REPO@$BRANCH"
+    EOT
   }
 }
 
@@ -106,7 +132,8 @@ resource "github_repository_environment" "env" {
 # --- Actions variables & secrets --------------------------------------------
 
 resource "github_actions_variable" "repo" {
-  for_each      = var.repository_variables
+  # GitHub rejects empty variable values; skip blanks (e.g. an unset service pack).
+  for_each      = { for k, v in var.repository_variables : k => v if v != "" }
   repository    = github_repository.platform.name
   variable_name = each.key
   value         = each.value
