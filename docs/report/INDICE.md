@@ -11,8 +11,8 @@ documento final (.docx) en la Fase 10. Estado: ✅ borrador listo · 🔶 parcia
 | # | Capítulo | Fuente / archivo | Estado |
 |---|---|---|---|
 | 1 | Introducción: antecedentes, problema, justificación, objetivos | `01-introduccion.md` | ✅ |
-| 2 | Marco teórico | `02-marco-teorico.md` | ⬜ |
-| 3 | Arquitectura de la solución | `03-arquitectura.md` (base: PLAN §3) | ⬜ |
+| 2 | Marco teórico | `02-marco-teorico.md` | ✅ |
+| 3 | Arquitectura de la solución | `03-arquitectura.md` (base: PLAN §3) | ✅ |
 | 4 | Implementación — pila local y sitio demo | `fase2-sitio-demo.md` | ✅ |
 | 5 | Implementación — bootstrap del repositorio | `fase3-bootstrap-repositorio.md` | ✅ |
 | 6 | Implementación — módulos de infraestructura | `fase4-modulos-terraform.md` | ✅ |
