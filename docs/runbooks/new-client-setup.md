@@ -40,41 +40,32 @@ protection/environments need a paid plan on private repos).
 4. **Delete the temporary secrets** (re-apply `bootstrap/` with
    `TF_VAR_repository_secrets='{}'`), and delete the IAM key when done.
 
-## 3. Wire the account into the repo (~10 min)
+## 3. Wire the account into the repo (~5 min)
 
-1. **Backends:** in `terraform/envs/*/providers.tf` set the state bucket name
-   (`aem-platform-tfstate-<ACCOUNT_ID>`) — 3 files, same value.
-2. **Binaries:** `aws s3 cp` the jar, license and x86_64 dispatcher tarball to
+1. **Binaries:** `aws s3 cp` the jar, license and x86_64 dispatcher tarball to
    the seed bucket. Filenames must match `terraform/envs/*/variables.tf`
    defaults (or adjust the tfvars).
-3. **Actions variables** (via `bootstrap/` TF_VARs or the GitHub UI):
+2. **Actions variables** (via `bootstrap/` TF_VARs or the GitHub UI):
    - repo: `BINARIES_SEED_BUCKET`
    - per env: `AWS_ROLE_ARN` = `arn:aws:iam::<ACCOUNT_ID>:role/gha-aem-<env>`
-4. Commit + push the backend change.
 
-## 4. Deploy dev (~45 min, mostly AEM boot)
+That's all: the Terraform backend is derived from the account at runtime, and
+the per-env buckets are discovered by tags — no file edits, no per-env bucket
+variables.
 
-1. Dispatch **deploy-infra** (dev / apply) — or just push; merges to main
-   touching `terraform/**` auto-deploy dev.
-2. From the run output take `binaries_bucket` and `package_backup_bucket`
-   (random suffixes!) and set them as dev environment variables
-   `BINARIES_BUCKET` / `BACKUP_BUCKET`.
-3. Wait for AEM readiness (~15–20 min after apply; check via SSM or wait for
-   the ALB to answer). ⚠️ Do NOT set `AEM_ADMIN_PASSWORD` yet — instances
-   boot with admin/admin and the workflows use the secret as the current
-   credential.
-4. Dispatch **deploy-app** (dev) → installs the site on Author + all Publish.
-5. Dispatch **configure** (dev, harden=false) → replication + flush per pair.
-6. Verify: `http://<alb_dns_name>/content/aemdemo/us/en.html` → 200.
+## 4. Deploy (~45 min, mostly AEM boot) — ONE CLICK
 
-## 5. Harden + backups (~10 min)
+Optionally set the environment secret `AEM_ADMIN_PASSWORD` first (the
+workflows auto-detect whether instances are already rotated, so ordering no
+longer matters). Then dispatch **provision** (environment, harden=true/false):
 
-1. Set the dev environment secret `AEM_ADMIN_PASSWORD` (strong value; store it
-   in the client's vault).
-2. Dispatch **configure** (dev, harden=true) → rotates admin, re-points
-   replication, smoke-checks.
-3. Dispatch **backup** (dev) → verify the package lands in the backup bucket.
-   (EBS snapshots: the DLM policy runs on its own schedule.)
+```
+infra apply → wait for AEM readiness → deploy app → replication/flush
+(+ hardening) → smoke test → the run summary prints the public site URL
+```
+
+For backups, dispatch **backup** once (it also runs daily by cron), and the
+DLM snapshot policy operates on its own schedule.
 
 ## 6. Optional demos
 
@@ -97,8 +88,5 @@ instances, NAT, ALBs, EIPs, non-default VPCs, stray volumes.
   (`certificate_arn` variable is already wired).
 - **Author has no ALB route by default** (`author_host` empty): authors reach
   it via SSM port-forward. Set `author_host` + DNS for browser access.
-- The `BINARIES_BUCKET`/`BACKUP_BUCKET` variables must be set manually after
-  the first apply (bucket names carry random suffixes).
-- The admin-password secret has an ordering constraint (see steps 4–5).
 - Scaling is explicit (variable through the pipeline), not autoscaling.
 - Single region; DR/observability/CDN are documented future work.

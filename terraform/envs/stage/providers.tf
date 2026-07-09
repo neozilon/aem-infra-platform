@@ -8,14 +8,10 @@ terraform {
     }
   }
 
-  # Remote state (Phase 8): bucket/table created by terraform/global.
-  backend "s3" {
-    bucket         = "aem-platform-tfstate-599526349046"
-    key            = "envs/stage/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "aem-platform-tflock"
-    encrypt        = true
-  }
+  # Remote state: PARTIAL configuration — bucket/key/region/lock table are
+  # injected by the pipeline via -backend-config (derived from the AWS account
+  # ID at runtime), so no account-specific value lives in the repo.
+  backend "s3" {}
 }
 
 provider "aws" {

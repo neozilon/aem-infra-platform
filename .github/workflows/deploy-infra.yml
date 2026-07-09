@@ -24,6 +24,14 @@ on:
         type: choice
         options: [plan, apply, destroy]
         default: plan
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: dev
+      action:
+        type: string
+        default: apply
 
 permissions:
   id-token: write
@@ -86,9 +94,16 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: terraform init
+      - name: terraform init (backend derived from the account)
         if: steps.aws.outputs.configured == 'true'
-        run: terraform -chdir="terraform/envs/$TARGET_ENV" init -input=false
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          terraform -chdir="terraform/envs/$TARGET_ENV" init -input=false \
+            -backend-config="bucket=aem-platform-tfstate-${ACCOUNT_ID}" \
+            -backend-config="key=envs/$TARGET_ENV/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=aem-platform-tflock" \
+            -backend-config="encrypt=true"
 
       - name: terraform plan
         if: steps.aws.outputs.configured == 'true'

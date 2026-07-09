@@ -19,6 +19,11 @@ on:
         type: choice
         options: [dev, stage, prod]
         default: dev
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: dev
 
 permissions:
   id-token: write
@@ -63,11 +68,10 @@ jobs:
         id: aws
         env:
           ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
-          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
         run: |
-          if [ -z "$ROLE_ARN" ] || [ -z "$BINARIES_BUCKET" ]; then
+          if [ -z "$ROLE_ARN" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::AWS_ROLE_ARN / BINARIES_BUCKET not set for '$TARGET_ENV' — skipping (Phase 8 wiring)."
+            echo "::notice::AWS_ROLE_ARN not set for '$TARGET_ENV' — skipping."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -86,8 +90,20 @@ jobs:
       - name: Upload package to the env binaries bucket
         if: steps.aws.outputs.configured == 'true'
         env:
-          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
+          BINARIES_BUCKET_OVERRIDE: ${{ vars.BINARIES_BUCKET }}
         run: |
+          # Discover the env's binaries bucket by its tags (names carry random
+          # suffixes). vars.BINARIES_BUCKET remains as an optional override.
+          if [ -n "$BINARIES_BUCKET_OVERRIDE" ]; then
+            BINARIES_BUCKET="$BINARIES_BUCKET_OVERRIDE"
+          else
+            BINARIES_BUCKET=$(aws resourcegroupstaggingapi get-resources               --resource-type-filters s3:bucket               --tag-filters "Key=Environment,Values=$TARGET_ENV" "Key=Project,Values=aem"               --query 'ResourceTagMappingList[].ResourceARN' --output text               | tr '\t' '\n' | grep -- '-binaries-' | sed 's/.*://' | head -1)
+          fi
+          if [ -z "$BINARIES_BUCKET" ]; then
+            echo "::error::could not discover the binaries bucket for '$TARGET_ENV' (is the env deployed?)"
+            exit 1
+          fi
+          echo "BINARIES_BUCKET=$BINARIES_BUCKET" >> "$GITHUB_ENV"
           PKG=$(ls aemdemo.all-*.zip)
           echo "PKG=$PKG" >> "$GITHUB_ENV"
           aws s3 cp "$PKG" "s3://$BINARIES_BUCKET/packages/$PKG"
@@ -95,7 +111,6 @@ jobs:
       - name: Install on Author and Publish via SSM
         if: steps.aws.outputs.configured == 'true'
         env:
-          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
           ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD || 'admin' }}
         run: |
           set -euo pipefail
@@ -118,7 +133,8 @@ jobs:
                 --document-name AWS-RunShellScript \
                 --parameters "commands=[
                   \"aws s3 cp s3://$BINARIES_BUCKET/packages/$PKG /tmp/$PKG\",
-                  \"curl -sf -u admin:$ADMIN_PASSWORD -F file=@/tmp/$PKG -F name=aemdemo-all -F force=true -F install=true http://localhost:$port/crx/packmgr/service.jsp\",
+                  \"P='$ADMIN_PASSWORD'; curl -s -u admin:\$P http://localhost:$port/libs/granite/security/currentuser.json | grep -q 'authorizableId\\\":\\\"admin' || P=admin\",
+                  \"curl -sf -u admin:\$P -F file=@/tmp/$PKG -F name=aemdemo-all -F force=true -F install=true http://localhost:$port/crx/packmgr/service.jsp\",
                   \"rm -f /tmp/$PKG\"
                 ]" \
                 --query 'Command.CommandId' --output text)

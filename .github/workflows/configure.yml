@@ -19,6 +19,14 @@ on:
         description: Also run the hardening baseline (rotates admin to secrets.AEM_ADMIN_PASSWORD)
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: dev
+      harden:
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -145,7 +153,7 @@ jobs:
               --parameters "commands=[
                 \"curl -sfL $REPO_RAW/scripts/configure-replication.sh -o /tmp/configure-replication.sh\",
                 \"chmod +x /tmp/configure-replication.sh\",
-                \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 PUBLISH_INTERNAL=http://$PUB_IP:4503 DISPATCHER_INTERNAL=http://$DISP_IP:80 AGENT_NAME=$AGENT_NAME AUTHOR_CREDS=admin:$ADMIN_PASSWORD PUBLISH_CREDS=admin:$ADMIN_PASSWORD PUBLISH_PASS_ON_PUBLISH=$ADMIN_PASSWORD /tmp/configure-replication.sh\"
+                \"AP='$ADMIN_PASSWORD'; curl -s -u admin:\$AP http://localhost:4502/libs/granite/security/currentuser.json | grep -q 'authorizableId\\\":\\\"admin' || AP=admin; PP='$ADMIN_PASSWORD'; curl -s -u admin:\$PP http://$PUB_IP:4503/libs/granite/security/currentuser.json | grep -q 'authorizableId\\\":\\\"admin' || PP=admin; AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 PUBLISH_INTERNAL=http://$PUB_IP:4503 DISPATCHER_INTERNAL=http://$DISP_IP:80 AGENT_NAME=$AGENT_NAME AUTHOR_CREDS=admin:\$AP PUBLISH_CREDS=admin:\$PP PUBLISH_PASS_ON_PUBLISH=\$PP /tmp/configure-replication.sh\"
               ]" \
               --query 'Command.CommandId' --output text)
             aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"

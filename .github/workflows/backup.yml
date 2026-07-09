@@ -31,11 +31,10 @@ jobs:
         id: aws
         env:
           ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
-          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
         run: |
-          if [ -z "$ROLE_ARN" ] || [ -z "$BACKUP_BUCKET" ]; then
+          if [ -z "$ROLE_ARN" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::AWS_ROLE_ARN / BACKUP_BUCKET not set for '$TARGET_ENV' — skipping (Phase 8 wiring)."
+            echo "::notice::AWS_ROLE_ARN not set for '$TARGET_ENV' — skipping."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -49,11 +48,24 @@ jobs:
       - name: Export content package on the Author via SSM
         if: steps.aws.outputs.configured == 'true'
         env:
-          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+          BACKUP_BUCKET_OVERRIDE: ${{ vars.BACKUP_BUCKET }}
           ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD || 'admin' }}
           REPO_RAW: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}
         run: |
           set -euo pipefail
+          if [ -n "$BACKUP_BUCKET_OVERRIDE" ]; then
+            BACKUP_BUCKET="$BACKUP_BUCKET_OVERRIDE"
+          else
+            BACKUP_BUCKET=$(aws resourcegroupstaggingapi get-resources \
+              --resource-type-filters s3:bucket \
+              --tag-filters "Key=Environment,Values=$TARGET_ENV" "Key=Project,Values=aem" \
+              --query 'ResourceTagMappingList[].ResourceARN' --output text \
+              | tr '\t' '\n' | grep -- '-pkg-backup-' | sed 's/.*://' | head -1)
+          fi
+          if [ -z "$BACKUP_BUCKET" ]; then
+            echo "::error::could not discover the backup bucket for '$TARGET_ENV'"
+            exit 1
+          fi
           AUTHOR_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Role,Values=author" \
                       "Name=tag:Environment,Values=$TARGET_ENV" \
@@ -69,7 +81,8 @@ jobs:
             --parameters "commands=[
               \"curl -sfL $REPO_RAW/scripts/backup-packages.sh -o /tmp/backup-packages.sh\",
               \"chmod +x /tmp/backup-packages.sh\",
-              \"AEM_URL=http://localhost:4502 AEM_CREDS=admin:$ADMIN_PASSWORD BACKUP_BUCKET=$BACKUP_BUCKET OUT_DIR=/tmp/backups /tmp/backup-packages.sh\",
+              \"P='$ADMIN_PASSWORD'; curl -s -u admin:\$P http://localhost:4502/libs/granite/security/currentuser.json | grep -q 'authorizableId\\\":\\\"admin' || P=admin\",
+              \"AEM_URL=http://localhost:4502 AEM_CREDS=admin:\$P BACKUP_BUCKET=$BACKUP_BUCKET OUT_DIR=/tmp/backups /tmp/backup-packages.sh\",
               \"rm -rf /tmp/backup-packages.sh /tmp/backups\"
             ]" \
             --query 'Command.CommandId' --output text)
