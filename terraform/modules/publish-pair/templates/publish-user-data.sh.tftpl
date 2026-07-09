@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# AEM ${runmode} bootstrap (Amazon Linux 2023). Pulls licensed binaries from S3
+# via the instance role and starts AEM under systemd. Mirrors the local Docker
+# install and the author module so behaviour is identical across nodes.
+set -euxo pipefail
+
+AEM_HOME=/opt/aem
+DATA_DEV=/dev/sdf
+DATA_MNT=$AEM_HOME/crx-quickstart
+
+dnf install -y "java-${java_version}-amazon-corretto-headless" awscli
+
+mkdir -p "$AEM_HOME"
+if ! blkid "$DATA_DEV"; then
+  mkfs -t xfs "$DATA_DEV"
+fi
+mkdir -p "$DATA_MNT"
+grep -q "$DATA_MNT" /etc/fstab || echo "$DATA_DEV $DATA_MNT xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+
+id aem >/dev/null 2>&1 || useradd -r -d "$AEM_HOME" -s /sbin/nologin aem
+
+aws s3 cp "s3://${binaries_bucket}/${quickstart_jar_key}" "$AEM_HOME/cq-quickstart.jar"
+aws s3 cp "s3://${binaries_bucket}/${license_key}"        "$AEM_HOME/license.properties"
+%{ if service_pack_key != "" ~}
+aws s3 cp "s3://${binaries_bucket}/${service_pack_key}"   "$AEM_HOME/service-pack.zip"
+%{ endif ~}
+chown -R aem:aem "$AEM_HOME"
+
+if [ ! -d "$DATA_MNT/app" ]; then
+  cd "$AEM_HOME"
+  runuser -u aem -- java -jar cq-quickstart.jar -unpack -r ${runmode}
+fi
+
+cat > /etc/systemd/system/aem.service <<UNIT
+[Unit]
+Description=Adobe Experience Manager (${runmode})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aem
+WorkingDirectory=$DATA_MNT
+Environment=CQ_PORT=${aem_port}
+Environment=CQ_RUNMODE=${runmode}
+Environment=CQ_JVM_OPTS=${jvm_opts}
+ExecStart=$DATA_MNT/bin/start
+ExecStop=$DATA_MNT/bin/stop
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now aem.service

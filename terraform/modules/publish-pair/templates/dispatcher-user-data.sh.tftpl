@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# AEM Dispatcher bootstrap (Amazon Linux 2023): Apache httpd + Adobe Dispatcher
+# module, rendering ONLY its paired Publish node. The farm config mirrors
+# docker/dispatcher/conf/publish-farm.any (same deny-by-default model, /url
+# clientlib rule); PUBLISH_HOST / FLUSH_ALLOWED_IP are the paired Publish IP.
+set -euxo pipefail
+
+dnf install -y httpd awscli
+DISP_DIR=/etc/httpd/dispatcher
+mkdir -p "$DISP_DIR" /var/cache/dispatcher
+chown apache:apache /var/cache/dispatcher
+
+# --- Dispatcher module from S3 ----------------------------------------------
+aws s3 cp "s3://${binaries_bucket}/${dispatcher_tar_key}" /tmp/dispatcher.tar.gz
+mkdir -p /tmp/disp && tar -xzf /tmp/dispatcher.tar.gz -C /tmp/disp
+cp /tmp/disp/dispatcher-apache2.4-*.so /etc/httpd/modules/mod_dispatcher.so
+
+# --- Farm config (deny by default; allow content + clientlibs via /url) ------
+cat > "$DISP_DIR/publish-farm.any" <<FARM
+/farms {
+  /publishfarm {
+    /clientheaders { "*" }
+    /virtualhosts { "*" }
+    /renders {
+      /rend01 {
+        /hostname "${publish_host}"
+        /port "${publish_port}"
+        /timeout "10000"
+      }
+    }
+    /filter {
+      /0001 { /type "deny"  /glob "*" }
+      /0010 { /type "allow" /url "/content/*" }
+      /0020 { /type "allow" /url "/etc.clientlibs/*" }
+      /0030 { /type "allow" /url "/content/dam/*" }
+      /0040 { /type "allow" /url "/" }
+      /0100 { /type "deny"  /path "/crx/*" }
+      /0101 { /type "deny"  /path "/system/*" }
+      /0102 { /type "deny"  /url  "*.json" }
+    }
+    /cache {
+      /docroot "/var/cache/dispatcher"
+      /statfileslevel "2"
+      /serveStaleOnError "1"
+      /allowAuthorized "0"
+      /rules { /0000 { /glob "*" /type "allow" } }
+      /invalidate {
+        /0000 { /glob "*" /type "deny" }
+        /0001 { /glob "*.html" /type "allow" }
+        /0002 { /glob "/etc.clientlibs/*" /type "allow" }
+      }
+      /allowedClients {
+        /0000 { /glob "*" /type "deny" }
+        /0001 { /glob "${flush_allowed_ip}" /type "allow" }
+      }
+    }
+  }
+}
+FARM
+
+# --- httpd wiring ------------------------------------------------------------
+cat > /etc/httpd/conf.d/dispatcher.conf <<CONF
+LoadModule dispatcher_module modules/mod_dispatcher.so
+<IfModule disp_apache2.c>
+    DispatcherConfig    $DISP_DIR/publish-farm.any
+    DispatcherLog       /var/log/httpd/dispatcher.log
+    DispatcherLogLevel  info
+    DispatcherUseProcessedURL On
+    DispatcherDeclineRoot    On
+</IfModule>
+<Directory /var/cache/dispatcher>
+    Require all granted
+</Directory>
+DocumentRoot /var/cache/dispatcher
+<Location />
+    SetHandler dispatcher-handler
+</Location>
+CONF
+
+systemctl enable --now httpd

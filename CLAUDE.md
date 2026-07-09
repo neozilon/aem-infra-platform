@@ -20,7 +20,8 @@ University final project (Fede Arriola). Automated provisioning + initial deploy
   - http://localhost:8080/content/aemdemo/us/en.html + all clientlibs render 200 through the dispatcher
   - Dispatcher filter fix: clientlibs were `blocked` under `/path "/etc.clientlibs/*"`; switched to `/url` (see gotcha) and rebuilt the image
 - Phase 3 DONE (executed 2026-07-08): `bootstrap/` created **github.com/neozilon/aem-infra-platform** (public) with branch protection (1 approval), dev/stage/prod environments (stage+prod gated with `neozilon` reviewer), Actions variables (AEM_VERSION/DISPATCHER_VERSION/JAVA_VERSION/AWS_REGION). Local git initialised; code pushed to `origin/main`. `terraform plan` idempotent (no changes). Re-run: `GITHUB_TOKEN=ghp_xxx ./bootstrap/bootstrap.sh -o neozilon` (visibility=public, reviewers set via TF_VARs — see gotcha)
-- NEXT: Phase 4 (Terraform modules: network, binaries, author, publish-pair, alb, backup) per `docs/PLAN.md` §5
+- Phase 4 DONE (modules validated, NOT applied — AWS apply is Phase 8): `terraform/modules/{network,binaries,author,publish-pair,alb,backup}`. All pass `terraform fmt -recursive` + per-module `validate` (Terraform 1.15, aws ~> 5.60). Key designs: 1:1 elasticity via `publish-pair count`; ALB target-group ATTACHMENTS live in the env root (not the alb module) to avoid a module cycle; dispatcher bootstrap reuses the Phase-2 `/url` farm config templated with the paired publish IP; SSM/IMDSv2/encryption/least-priv baseline
+- NEXT: Phase 5 (env roots `terraform/envs/{dev,stage,prod}` + tfvars + S3/lock remote state) — wires the modules and gives the first integrated `plan`
 
 ## Environment gotchas (hard-won, respect these)
 
