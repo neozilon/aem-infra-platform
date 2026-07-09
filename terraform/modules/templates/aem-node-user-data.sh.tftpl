@@ -13,6 +13,14 @@ DATA_MNT=$AEM_HOME/crx-quickstart
 dnf install -y "java-${java_version}-amazon-corretto-headless" awscli
 
 # --- Data volume (idempotent format + mount) ---------------------------------
+# The aws_volume_attachment lands AFTER instance boot; wait for the device
+# (udev symlink on Nitro/NVMe) before formatting or user-data races it.
+n=0
+until [ -e "$DATA_DEV" ]; do
+  n=$((n+1))
+  [ "$n" -ge 60 ] && { echo "ERROR: $DATA_DEV never appeared" >&2; exit 1; }
+  sleep 5
+done
 mkdir -p "$AEM_HOME"
 if ! blkid "$DATA_DEV"; then
   mkfs -t xfs "$DATA_DEV"

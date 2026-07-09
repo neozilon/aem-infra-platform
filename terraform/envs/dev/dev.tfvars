@@ -3,7 +3,7 @@ environment = "dev"
 region      = "us-east-1"
 vpc_cidr    = "10.10.0.0/16"
 
-publish_pair_count       = 2
+publish_pair_count       = 1
 author_instance_type     = "t3.xlarge"
 publish_instance_type    = "t3.large"
 dispatcher_instance_type = "t3.small"
