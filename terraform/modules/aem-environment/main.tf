@@ -60,9 +60,14 @@ module "author" {
   license_key         = module.binaries.license_key
   service_pack_key    = module.binaries.service_pack_key
 
-  aem_version  = var.aem_version
-  java_version = var.java_version
-  tags         = local.tags
+  aem_version     = var.aem_version
+  java_version    = var.java_version
+  aem_env_runmode = var.environment
+
+  # Tier-2 backups: the Author uploads content packages here.
+  backup_bucket_arn = module.backup.package_bucket_arn
+
+  tags = local.tags
 }
 
 module "publish_pair" {
@@ -87,9 +92,10 @@ module "publish_pair" {
   service_pack_key    = module.binaries.service_pack_key
   dispatcher_tar_key  = module.binaries.dispatcher_tar_key
 
-  aem_version  = var.aem_version
-  java_version = var.java_version
-  tags         = local.tags
+  aem_version     = var.aem_version
+  java_version    = var.java_version
+  aem_env_runmode = var.environment
+  tags            = local.tags
 }
 
 module "backup" {

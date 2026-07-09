@@ -63,6 +63,24 @@ resource "aws_iam_role_policy" "binaries_read" {
   policy = data.aws_iam_policy_document.binaries_read.json
 }
 
+# Tier-2 backups: allow the Author to upload content packages.
+data "aws_iam_policy_document" "backup_write" {
+  count = var.backup_bucket_arn != "" ? 1 : 0
+
+  statement {
+    sid       = "PutPackages"
+    actions   = ["s3:PutObject"]
+    resources = ["${var.backup_bucket_arn}/packages/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "backup_write" {
+  count  = var.backup_bucket_arn != "" ? 1 : 0
+  name   = "backup-write"
+  role   = aws_iam_role.author.id
+  policy = data.aws_iam_policy_document.backup_write[0].json
+}
+
 resource "aws_iam_instance_profile" "author" {
   name_prefix = "${var.name_prefix}-author-"
   role        = aws_iam_role.author.name
@@ -121,8 +139,9 @@ resource "aws_instance" "author" {
   vpc_security_group_ids = [aws_security_group.author.id]
   iam_instance_profile   = aws_iam_instance_profile.author.name
 
-  user_data = templatefile("${path.module}/templates/user-data.sh.tftpl", {
+  user_data = templatefile("${path.module}/../templates/aem-node-user-data.sh.tftpl", {
     runmode            = "author"
+    env_runmode        = var.aem_env_runmode
     aem_port           = var.aem_port
     binaries_bucket    = var.binaries_bucket_id
     quickstart_jar_key = var.quickstart_jar_key
@@ -130,6 +149,7 @@ resource "aws_instance" "author" {
     service_pack_key   = var.service_pack_key
     java_version       = var.java_version
     jvm_opts           = var.jvm_opts
+    install_script     = file("${path.module}/../../../scripts/install-aem.sh")
   })
 
   root_block_device {

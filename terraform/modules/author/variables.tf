@@ -93,6 +93,18 @@ variable "java_version" {
   default     = "21"
 }
 
+variable "aem_env_runmode" {
+  description = "Environment runmode appended to the role runmode (dev/stage/prod). Empty = role runmode only."
+  type        = string
+  default     = ""
+}
+
+variable "backup_bucket_arn" {
+  description = "ARN of the content-package backup bucket. Non-empty = the instance role may write packages/* there (Tier-2 backups)."
+  type        = string
+  default     = ""
+}
+
 variable "jvm_opts" {
   description = "JVM options for the AEM process."
   type        = string

@@ -15,6 +15,10 @@ on:
         type: choice
         options: [dev, stage, prod]
         default: dev
+      harden:
+        description: Also run the hardening baseline (rotates admin to secrets.AEM_ADMIN_PASSWORD)
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -90,6 +94,58 @@ jobs:
                 \"curl -sfL $REPO_RAW/scripts/configure-replication.sh -o /tmp/configure-replication.sh\",
                 \"chmod +x /tmp/configure-replication.sh\",
                 \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 PUBLISH_INTERNAL=http://$PUB_IP:4503 DISPATCHER_INTERNAL=http://$DISP_IP:80 AGENT_NAME=$AGENT_NAME AUTHOR_CREDS=admin:$ADMIN_PASSWORD PUBLISH_CREDS=admin:$ADMIN_PASSWORD PUBLISH_PASS_ON_PUBLISH=$ADMIN_PASSWORD /tmp/configure-replication.sh\"
+              ]" \
+              --query 'Command.CommandId' --output text)
+            aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"
+            aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$AUTHOR_ID" \
+              --query 'StandardOutputContent' --output text
+          done
+
+      - name: Harden (rotate admin, per pair) via SSM
+        if: steps.aws.outputs.configured == 'true' && inputs.harden
+        env:
+          NEW_ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD }}
+          CURRENT_ADMIN_PASSWORD: ${{ secrets.AEM_CURRENT_ADMIN_PASSWORD || 'admin' }}
+          REPO_RAW: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEW_ADMIN_PASSWORD" ]; then
+            echo "::error::secrets.AEM_ADMIN_PASSWORD is required for hardening"
+            exit 1
+          fi
+
+          get_instance() {
+            local filters=("Name=tag:Role,Values=$1"
+                           "Name=tag:Environment,Values=$TARGET_ENV"
+                           "Name=instance-state-name,Values=running")
+            [ -n "${2:-}" ] && filters+=("Name=tag:Pair,Values=$2")
+            aws ec2 describe-instances --filters "${filters[@]}" \
+              --query 'Reservations[].Instances[][InstanceId,PrivateIpAddress]' \
+              --output text
+          }
+
+          read -r AUTHOR_ID _ <<< "$(get_instance author)"
+          pairs=$(aws ec2 describe-instances \
+            --filters "Name=tag:Role,Values=publish" \
+                      "Name=tag:Environment,Values=$TARGET_ENV" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].Tags[?Key==`Pair`].Value' \
+            --output text | tr '\t' '\n' | sort -un)
+
+          # harden.sh is idempotent: the author rotation runs on the first
+          # pair and is skipped ("already rotated") on subsequent ones.
+          for pair in $pairs; do
+            read -r _ PUB_IP <<< "$(get_instance publish "$pair")"
+            AGENT_NAME=$([ "$pair" = "0" ] && echo publish || echo "publish$pair")
+            echo ">>> hardening pair $pair (publish $PUB_IP, agent $AGENT_NAME)"
+            cmd_id=$(aws ssm send-command \
+              --instance-ids "$AUTHOR_ID" \
+              --document-name AWS-RunShellScript \
+              --parameters "commands=[
+                \"curl -sfL $REPO_RAW/scripts/harden.sh -o /tmp/harden.sh\",
+                \"chmod +x /tmp/harden.sh\",
+                \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 CURRENT_ADMIN_PASS=$CURRENT_ADMIN_PASSWORD NEW_ADMIN_PASS=$NEW_ADMIN_PASSWORD AGENT_NAMES=$AGENT_NAME /tmp/harden.sh\",
+                \"rm -f /tmp/harden.sh\"
               ]" \
               --query 'Command.CommandId' --output text)
             aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"

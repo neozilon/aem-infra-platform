@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# AEM ${runmode} node bootstrap (Amazon Linux 2023). Shared by the author and
+# publish-pair modules: prepares the data volume, pulls the licensed binaries
+# from S3 via the instance role, then delegates the actual install/start to
+# scripts/install-aem.sh (embedded verbatim below — single source of truth).
+set -euxo pipefail
+
+AEM_HOME=/opt/aem
+DATA_DEV=/dev/sdf
+DATA_MNT=$AEM_HOME/crx-quickstart
+
+# --- Java + tooling ----------------------------------------------------------
+dnf install -y "java-${java_version}-amazon-corretto-headless" awscli
+
+# --- Data volume (idempotent format + mount) ---------------------------------
+mkdir -p "$AEM_HOME"
+if ! blkid "$DATA_DEV"; then
+  mkfs -t xfs "$DATA_DEV"
+fi
+mkdir -p "$DATA_MNT"
+grep -q "$DATA_MNT" /etc/fstab || echo "$DATA_DEV $DATA_MNT xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+
+# --- Fetch licensed binaries -------------------------------------------------
+aws s3 cp "s3://${binaries_bucket}/${quickstart_jar_key}" "$AEM_HOME/cq-quickstart.jar"
+aws s3 cp "s3://${binaries_bucket}/${license_key}"        "$AEM_HOME/license.properties"
+%{ if service_pack_key != "" ~}
+aws s3 cp "s3://${binaries_bucket}/${service_pack_key}"   "$AEM_HOME/service-pack.zip"
+%{ endif ~}
+
+# --- Install & start (canonical script from scripts/install-aem.sh) ----------
+cat > /usr/local/bin/install-aem.sh <<'INSTALL_EOF'
+${install_script}
+INSTALL_EOF
+chmod +x /usr/local/bin/install-aem.sh
+
+AEM_HOME="$AEM_HOME" \
+AEM_RUNMODE="${runmode}" \
+AEM_ENV_RUNMODE="${env_runmode}" \
+AEM_PORT="${aem_port}" \
+AEM_JVM_OPTS="${jvm_opts}" \
+/usr/local/bin/install-aem.sh

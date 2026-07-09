@@ -161,8 +161,9 @@ resource "aws_instance" "publish" {
   vpc_security_group_ids = [aws_security_group.publish.id]
   iam_instance_profile   = aws_iam_instance_profile.pair.name
 
-  user_data = templatefile("${path.module}/templates/publish-user-data.sh.tftpl", {
+  user_data = templatefile("${path.module}/../templates/aem-node-user-data.sh.tftpl", {
     runmode            = "publish"
+    env_runmode        = var.aem_env_runmode
     aem_port           = var.publish_port
     binaries_bucket    = var.binaries_bucket_id
     quickstart_jar_key = var.quickstart_jar_key
@@ -170,6 +171,7 @@ resource "aws_instance" "publish" {
     service_pack_key   = var.service_pack_key
     java_version       = var.java_version
     jvm_opts           = var.publish_jvm_opts
+    install_script     = file("${path.module}/../../../scripts/install-aem.sh")
   })
 
   root_block_device {

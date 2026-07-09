@@ -108,6 +108,12 @@ variable "java_version" {
   default     = "21"
 }
 
+variable "aem_env_runmode" {
+  description = "Environment runmode appended to the role runmode (dev/stage/prod). Empty = role runmode only."
+  type        = string
+  default     = ""
+}
+
 variable "publish_jvm_opts" {
   description = "JVM options for the Publish process."
   type        = string
