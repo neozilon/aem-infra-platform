@@ -51,56 +51,6 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Configure replication per pair via SSM
-        if: steps.aws.outputs.configured == 'true'
-        env:
-          ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD || 'admin' }}
-          REPO_RAW: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          get_instance() { # $1 = Role, $2 = Pair tag (optional) → "id ip"
-            local filters=("Name=tag:Role,Values=$1"
-                           "Name=tag:Environment,Values=$TARGET_ENV"
-                           "Name=instance-state-name,Values=running")
-            [ -n "${2:-}" ] && filters+=("Name=tag:Pair,Values=$2")
-            aws ec2 describe-instances --filters "${filters[@]}" \
-              --query 'Reservations[].Instances[][InstanceId,PrivateIpAddress]' \
-              --output text
-          }
-
-          read -r AUTHOR_ID AUTHOR_IP <<< "$(get_instance author)"
-          echo "author: $AUTHOR_ID ($AUTHOR_IP)"
-
-          # Pair indices present in this environment
-          pairs=$(aws ec2 describe-instances \
-            --filters "Name=tag:Role,Values=publish" \
-                      "Name=tag:Environment,Values=$TARGET_ENV" \
-                      "Name=instance-state-name,Values=running" \
-            --query 'Reservations[].Instances[].Tags[?Key==`Pair`].Value' \
-            --output text | tr '\t' '\n' | sort -un)
-          echo "publish pairs: $pairs"
-
-          for pair in $pairs; do
-            read -r _ PUB_IP <<< "$(get_instance publish "$pair")"
-            read -r _ DISP_IP <<< "$(get_instance dispatcher "$pair")"
-            AGENT_NAME=$([ "$pair" = "0" ] && echo publish || echo "publish$pair")
-            echo ">>> pair $pair: publish=$PUB_IP dispatcher=$DISP_IP agent=$AGENT_NAME"
-
-            cmd_id=$(aws ssm send-command \
-              --instance-ids "$AUTHOR_ID" \
-              --document-name AWS-RunShellScript \
-              --parameters "commands=[
-                \"curl -sfL $REPO_RAW/scripts/configure-replication.sh -o /tmp/configure-replication.sh\",
-                \"chmod +x /tmp/configure-replication.sh\",
-                \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 PUBLISH_INTERNAL=http://$PUB_IP:4503 DISPATCHER_INTERNAL=http://$DISP_IP:80 AGENT_NAME=$AGENT_NAME AUTHOR_CREDS=admin:$ADMIN_PASSWORD PUBLISH_CREDS=admin:$ADMIN_PASSWORD PUBLISH_PASS_ON_PUBLISH=$ADMIN_PASSWORD /tmp/configure-replication.sh\"
-              ]" \
-              --query 'Command.CommandId' --output text)
-            aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"
-            aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$AUTHOR_ID" \
-              --query 'StandardOutputContent' --output text
-          done
-
       - name: Harden (rotate admin, per pair) via SSM
         if: steps.aws.outputs.configured == 'true' && inputs.harden
         env:
@@ -146,6 +96,56 @@ jobs:
                 \"chmod +x /tmp/harden.sh\",
                 \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 CURRENT_ADMIN_PASS=$CURRENT_ADMIN_PASSWORD NEW_ADMIN_PASS=$NEW_ADMIN_PASSWORD AGENT_NAMES=$AGENT_NAME /tmp/harden.sh\",
                 \"rm -f /tmp/harden.sh\"
+              ]" \
+              --query 'Command.CommandId' --output text)
+            aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"
+            aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$AUTHOR_ID" \
+              --query 'StandardOutputContent' --output text
+          done
+
+      - name: Configure replication per pair via SSM
+        if: steps.aws.outputs.configured == 'true'
+        env:
+          ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD || 'admin' }}
+          REPO_RAW: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          get_instance() { # $1 = Role, $2 = Pair tag (optional) → "id ip"
+            local filters=("Name=tag:Role,Values=$1"
+                           "Name=tag:Environment,Values=$TARGET_ENV"
+                           "Name=instance-state-name,Values=running")
+            [ -n "${2:-}" ] && filters+=("Name=tag:Pair,Values=$2")
+            aws ec2 describe-instances --filters "${filters[@]}" \
+              --query 'Reservations[].Instances[][InstanceId,PrivateIpAddress]' \
+              --output text
+          }
+
+          read -r AUTHOR_ID AUTHOR_IP <<< "$(get_instance author)"
+          echo "author: $AUTHOR_ID ($AUTHOR_IP)"
+
+          # Pair indices present in this environment
+          pairs=$(aws ec2 describe-instances \
+            --filters "Name=tag:Role,Values=publish" \
+                      "Name=tag:Environment,Values=$TARGET_ENV" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[].Instances[].Tags[?Key==`Pair`].Value' \
+            --output text | tr '\t' '\n' | sort -un)
+          echo "publish pairs: $pairs"
+
+          for pair in $pairs; do
+            read -r _ PUB_IP <<< "$(get_instance publish "$pair")"
+            read -r _ DISP_IP <<< "$(get_instance dispatcher "$pair")"
+            AGENT_NAME=$([ "$pair" = "0" ] && echo publish || echo "publish$pair")
+            echo ">>> pair $pair: publish=$PUB_IP dispatcher=$DISP_IP agent=$AGENT_NAME"
+
+            cmd_id=$(aws ssm send-command \
+              --instance-ids "$AUTHOR_ID" \
+              --document-name AWS-RunShellScript \
+              --parameters "commands=[
+                \"curl -sfL $REPO_RAW/scripts/configure-replication.sh -o /tmp/configure-replication.sh\",
+                \"chmod +x /tmp/configure-replication.sh\",
+                \"AUTHOR_URL=http://localhost:4502 PUBLISH_URL=http://$PUB_IP:4503 PUBLISH_INTERNAL=http://$PUB_IP:4503 DISPATCHER_INTERNAL=http://$DISP_IP:80 AGENT_NAME=$AGENT_NAME AUTHOR_CREDS=admin:$ADMIN_PASSWORD PUBLISH_CREDS=admin:$ADMIN_PASSWORD PUBLISH_PASS_ON_PUBLISH=$ADMIN_PASSWORD /tmp/configure-replication.sh\"
               ]" \
               --query 'Command.CommandId' --output text)
             aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$AUTHOR_ID"
