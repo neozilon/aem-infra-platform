@@ -40,6 +40,9 @@ if [ ! -d "$DATA_DIR/app" ]; then
   (cd "$AEM_HOME" && runuser -u aem -- java -jar cq-quickstart.jar -unpack -r "$RUNMODES")
 fi
 
+# Type=forking: AEM's bin/start FORKS the JVM and exits. With Type=simple,
+# systemd treats that exit as service death and kills the forked JVM
+# (observed on the first AWS boot; Docker masked it by exec'ing java -nofork).
 cat > /etc/systemd/system/aem.service <<UNIT
 [Unit]
 Description=Adobe Experience Manager ($RUNMODES)
@@ -47,7 +50,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=forking
 User=aem
 WorkingDirectory=$DATA_DIR
 Environment=CQ_PORT=$AEM_PORT
@@ -57,6 +60,7 @@ ExecStart=$DATA_DIR/bin/start
 ExecStop=$DATA_DIR/bin/stop
 Restart=on-failure
 TimeoutStartSec=900
+TimeoutStopSec=180
 
 [Install]
 WantedBy=multi-user.target
