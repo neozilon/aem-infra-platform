@@ -1,4 +1,5 @@
-binaries/
+# Root-anchored: only the licensed-artifacts folder, NOT terraform/modules/binaries
+/binaries/
 *.jar
 license.properties
 *.tfstate*
