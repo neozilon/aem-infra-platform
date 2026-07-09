@@ -8,3 +8,4 @@ license.properties
 .DS_Store
 **/.DS_Store
 *.tfplan
+node_modules/

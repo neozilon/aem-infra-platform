@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AEM Platform Portal</title>
+  <style>
+    :root {
+      --bg: #0f1420; --card: #171e2e; --line: #2a3550; --text: #e8ecf5;
+      --muted: #8b96ad; --accent: #4f8cff; --ok: #34c98e; --bad: #ff5d5d; --warn: #f2b035;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin-bottom: 28px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 18px; }
+    .card h2 { font-size: 15px; margin: 0 0 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+    input[type=text], input[type=password], select {
+      width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line);
+      background: #0d1220; color: var(--text); font-size: 14px;
+    }
+    input[type=file] { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    button {
+      background: var(--accent); border: 0; color: #fff; font-weight: 600; font-size: 14px;
+      padding: 10px 18px; border-radius: 8px; cursor: pointer; margin-top: 14px;
+    }
+    button.secondary { background: #232d45; }
+    button.danger { background: var(--bad); }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; gap: 14px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 220px; }
+    .msg { margin-top: 12px; font-size: 13px; white-space: pre-wrap; }
+    .msg.ok { color: var(--ok); } .msg.err { color: var(--bad); }
+    .check { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .check:last-child { border-bottom: 0; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; position: relative; top: 1px; }
+    .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.pend { background: var(--warn); }
+    .check small { color: var(--muted); margin-left: auto; text-align: right; }
+    .steps { margin: 14px 0 0; padding: 0; list-style: none; }
+    .steps li { display: flex; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .steps li:last-child { border-bottom: 0; }
+    .spin { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent);
+      border-radius: 50%; animation: r 0.9s linear infinite; flex: none; }
+    @keyframes r { to { transform: rotate(360deg); } }
+    .stepname { flex: 1; }
+    .badge { font-size: 12px; color: var(--muted); }
+    a { color: var(--accent); }
+    #live-url { font-size: 17px; font-weight: 700; word-break: break-all; }
+    .hidden { display: none !important; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+    .tabs button { margin: 0; background: #232d45; }
+    .tabs button.active { background: var(--accent); }
+    .hint { font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AEM Platform Portal</h1>
+    <div class="sub">One click from credentials to a cached AEM site on AWS — powered by the platform pipelines.</div>
+
+    <!-- LOGIN -->
+    <div id="view-login" class="card">
+      <h2>Sign in</h2>
+      <label>User</label><input type="text" id="login-user" value="demo" />
+      <label>Password</label><input type="password" id="login-pass" />
+      <button id="btn-login">Sign in</button>
+      <div class="msg" id="login-msg"></div>
+    </div>
+
+    <!-- MAIN -->
+    <div id="view-main" class="hidden">
+      <div class="tabs">
+        <button id="tab-deploy" class="active">Deploy</button>
+        <button id="tab-setup">First-time setup</button>
+      </div>
+
+      <!-- DEPLOY TAB -->
+      <div id="pane-deploy">
+        <div class="card">
+          <h2>Readiness</h2>
+          <div id="checks">Loading…</div>
+        </div>
+
+        <div class="card">
+          <h2>Deploy an environment</h2>
+          <div class="row">
+            <div>
+              <label>Environment</label>
+              <select id="dep-env"><option>dev</option><option>stage</option><option>prod</option></select>
+            </div>
+            <div>
+              <label>Hardening</label>
+              <select id="dep-harden"><option value="false">No (admin/admin)</option><option value="true">Yes (rotate admin)</option></select>
+            </div>
+          </div>
+          <button id="btn-deploy">🚀 Deploy</button>
+          <button id="btn-destroy" class="danger">Destroy</button>
+          <div class="msg" id="dep-msg"></div>
+          <ul class="steps hidden" id="dep-steps"></ul>
+          <div class="msg ok hidden" id="live-wrap">✅ Environment is live: <a id="live-url" target="_blank"></a></div>
+          <div class="hint">Deploy ≈ 45 min (AEM boot dominates). Stage/prod pause for reviewer approval in GitHub. Destroy ≈ 10 min.</div>
+        </div>
+      </div>
+
+      <!-- SETUP TAB -->
+      <div id="pane-setup" class="hidden">
+        <div class="card">
+          <h2>1 · Credentials</h2>
+          <div class="row">
+            <div><label>GitHub owner</label><input type="text" id="cf-owner" /></div>
+            <div><label>Repository</label><input type="text" id="cf-repo" value="aem-infra-platform" /></div>
+            <div><label>AWS region</label><input type="text" id="cf-region" value="us-east-1" /></div>
+          </div>
+          <label>GitHub token (repo + workflow scopes)</label><input type="password" id="cf-gh" placeholder="ghp_…" />
+          <label>AWS access key ID (admin — used for first-time setup only)</label><input type="password" id="cf-key" />
+          <label>AWS secret access key</label><input type="password" id="cf-secret" />
+          <button id="btn-config">Validate & save</button>
+          <div class="msg" id="cf-msg"></div>
+          <div class="hint">Held in memory only — re-enter after a portal restart. Delete the AWS key in IAM once setup is done.</div>
+        </div>
+
+        <div class="card">
+          <h2>2 · AWS account plumbing (once per account)</h2>
+          <p class="hint">Creates the OIDC provider, deploy roles, state bucket, seed bucket and budget alarm by running the <code>bootstrap-aws</code> workflow. The AWS key is placed in repo secrets only for the duration of the run, then removed.</p>
+          <button id="btn-bootstrap">Run AWS bootstrap</button>
+          <div class="msg" id="bs-msg"></div>
+        </div>
+
+        <div class="card">
+          <h2>3 · Licensed AEM binaries → your private bucket</h2>
+          <p class="hint">You must own an AEM 6.5 license. Files go to <b>your</b> private S3 seed bucket — never into git. Upload files or paste direct-download URLs.</p>
+          <label>Quickstart jar (~400 MB)</label><input type="file" id="bin-jar" />
+          <input type="text" id="bin-jar-url" placeholder="…or URL" />
+          <label>license.properties</label><input type="file" id="bin-license" />
+          <input type="text" id="bin-license-url" placeholder="…or URL" />
+          <label>Dispatcher module (linux x86_64 ssl3.0 tar.gz)</label><input type="file" id="bin-dispatcher" />
+          <input type="text" id="bin-dispatcher-url" placeholder="…or URL" />
+          <button id="btn-binaries">Upload binaries</button>
+          <div class="msg" id="bin-msg"></div>
+        </div>
+
+        <div class="card">
+          <h2>4 · Wire the pipeline variables</h2>
+          <p class="hint">Sets <code>BINARIES_SEED_BUCKET</code> and the per-environment <code>AWS_ROLE_ARN</code> automatically. Optionally set the admin password used when deploying with hardening.</p>
+          <label>AEM admin password (optional, for hardening)</label><input type="password" id="var-pass" />
+          <button id="btn-variables">Set variables</button>
+          <div class="msg" id="var-msg"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
