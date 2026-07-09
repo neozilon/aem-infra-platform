@@ -40,9 +40,11 @@ if [ ! -d "$DATA_DIR/app" ]; then
   (cd "$AEM_HOME" && runuser -u aem -- java -jar cq-quickstart.jar -unpack -r "$RUNMODES")
 fi
 
-# Type=forking: AEM's bin/start FORKS the JVM and exits. With Type=simple,
-# systemd treats that exit as service death and kills the forked JVM
-# (observed on the first AWS boot; Docker masked it by exec'ing java -nofork).
+# Run the quickstart jar in the FOREGROUND (-nofork) under Type=simple — the
+# same pattern as the local Docker entrypoint, proven in Phases 1-2. AEM's own
+# bin/start forks and confuses systemd (Type=simple kills the forked JVM
+# immediately; Type=forking mis-tracks the main PID) — both observed on AWS.
+# The jar detects the existing crx-quickstart unpack and reuses it.
 cat > /etc/systemd/system/aem.service <<UNIT
 [Unit]
 Description=Adobe Experience Manager ($RUNMODES)
@@ -50,16 +52,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=forking
+Type=simple
 User=aem
-WorkingDirectory=$DATA_DIR
-Environment=CQ_PORT=$AEM_PORT
-Environment=CQ_RUNMODE=$RUNMODES
-Environment=CQ_JVM_OPTS=$AEM_JVM_OPTS
-ExecStart=$DATA_DIR/bin/start
-ExecStop=$DATA_DIR/bin/stop
+WorkingDirectory=$AEM_HOME
+ExecStart=/usr/bin/java $AEM_JVM_OPTS -jar $AEM_HOME/cq-quickstart.jar -r $RUNMODES -p $AEM_PORT -nointeractive -nobrowser -nofork
 Restart=on-failure
-TimeoutStartSec=900
 TimeoutStopSec=180
 
 [Install]
