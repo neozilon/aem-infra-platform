@@ -23,6 +23,7 @@ module "binaries" {
   source = "../binaries"
 
   name_prefix         = local.name_prefix
+  force_destroy       = true
   quickstart_jar_path = var.quickstart_jar_path
   license_path        = var.license_path
   dispatcher_tar_path = var.dispatcher_tar_path
@@ -103,6 +104,7 @@ module "backup" {
   source = "../backup"
 
   name_prefix             = local.name_prefix
+  force_destroy           = var.environment != "prod"
   retention_count         = var.backup_retention_count
   snapshot_interval_hours = var.snapshot_interval_hours
   tags                    = local.tags

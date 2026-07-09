@@ -49,3 +49,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "force_destroy" {
+  description = "Purge all object versions on destroy. Keep FALSE in prod (backups outlive the env)."
+  type        = bool
+  default     = false
+}

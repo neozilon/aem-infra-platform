@@ -69,7 +69,9 @@ resource "random_id" "suffix" {
 resource "aws_s3_bucket" "packages" {
   count  = var.create_package_bucket ? 1 : 0
   bucket = local.package_bucket_name
-  tags   = merge(var.tags, { Name = local.package_bucket_name })
+  # Purge on destroy for ephemeral envs (dev/stage); prod passes false.
+  force_destroy = var.force_destroy
+  tags          = merge(var.tags, { Name = local.package_bucket_name })
 }
 
 resource "aws_s3_bucket_versioning" "packages" {

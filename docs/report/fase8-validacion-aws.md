@@ -1,10 +1,12 @@
-# Fase 8 — Validación en AWS real (parcial: bloqueada por el plan de cuenta)
+# Fase 8 — Validación en AWS real
 
 ## Estado
 
-**Infraestructura global y cadena de despliegue: verificadas.** El despliegue
-del entorno DEV quedó **bloqueado por el plan de la cuenta AWS** (plan
-gratuito), pendiente de la actualización al plan de pago por parte del titular.
+**COMPLETADA.** Tras la actualización de la cuenta al plan de pago, el ciclo
+completo se ejecutó sobre AWS real: aprovisionamiento de DEV por el pipeline,
+despliegue del sitio, configuración operativa, endurecimiento, backup,
+demostración de elasticidad 1→2→1 y destrucción final verificada. La evidencia
+completa está en `evidence/fase8-despliegue-aws.md`.
 
 ## Realizado y verificado
 

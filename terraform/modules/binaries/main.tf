@@ -19,7 +19,10 @@ resource "random_id" "suffix" {
 
 resource "aws_s3_bucket" "binaries" {
   bucket = local.bucket_name
-  tags   = merge(var.tags, { Name = local.bucket_name })
+  # Env buckets are reproducible (re-synced from the seed bucket); allow
+  # destroy to purge versions so `terraform destroy` is one-shot.
+  force_destroy = var.force_destroy
+  tags          = merge(var.tags, { Name = local.bucket_name })
 }
 
 resource "aws_s3_bucket_versioning" "binaries" {

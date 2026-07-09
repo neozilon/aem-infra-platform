@@ -59,3 +59,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "force_destroy" {
+  description = "Purge all object versions on destroy (safe: contents are re-synced from the seed bucket)."
+  type        = bool
+  default     = true
+}
