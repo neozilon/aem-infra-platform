@@ -1,0 +1,56 @@
+# One-shot: applies terraform/global (OIDC provider, per-env roles, state
+# bucket + lock table, binaries seed bucket, budget alert) from a runner.
+# Uses a HUMAN access key held temporarily in repo secrets — this is the only
+# workflow that ever touches long-lived AWS credentials, and the secrets are
+# deleted right after it succeeds. Everything else authenticates via the OIDC
+# roles this workflow creates.
+# (Runs here rather than locally: the developer Mac's network silently drops
+# aws-sdk-go traffic — see docs/report/fase8 notes.)
+name: bootstrap-aws
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.15.7"
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_BOOTSTRAP_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_BOOTSTRAP_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  TF_VAR_budget_email: farriola@gmail.com
+
+jobs:
+  apply-global:
+    name: apply-global
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check credentials present
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+            echo "::error::AWS_BOOTSTRAP_ACCESS_KEY_ID secret is not set"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform init + apply (global root)
+        run: |
+          terraform -chdir=terraform/global init -input=false
+          terraform -chdir=terraform/global apply -input=false -auto-approve
+
+      - name: Outputs
+        run: terraform -chdir=terraform/global output
+
+      # The global root uses LOCAL state (chicken-and-egg with the state
+      # bucket); persist it as a private artifact so re-runs can import it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: global-tfstate
+          path: terraform/global/terraform.tfstate
+          retention-days: 90

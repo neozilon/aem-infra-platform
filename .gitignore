@@ -7,3 +7,4 @@ license.properties
 *.tfvars.secret
 .DS_Store
 **/.DS_Store
+*.tfplan

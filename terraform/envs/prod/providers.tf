@@ -8,17 +8,14 @@ terraform {
     }
   }
 
-  # Remote state — enable in Phase 8 once the AWS account and a state bucket
-  # (+ DynamoDB lock table) exist. Local state is used until then so the roots
-  # can be built and validated without cloud access.
-  #
-  # backend "s3" {
-  #   bucket         = "aem-platform-tfstate"
-  #   key            = "envs/prod/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "aem-platform-tflock"
-  #   encrypt        = true
-  # }
+  # Remote state (Phase 8): bucket/table created by terraform/global.
+  backend "s3" {
+    bucket         = "aem-platform-tfstate-599526349046"
+    key            = "envs/prod/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "aem-platform-tflock"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
