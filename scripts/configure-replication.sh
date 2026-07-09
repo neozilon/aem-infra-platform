@@ -16,10 +16,26 @@ AUTHOR_CREDS="${AUTHOR_CREDS:-admin:admin}"
 PUBLISH_CREDS="${PUBLISH_CREDS:-admin:admin}"
 PUBLISH_USER_ON_PUBLISH="${PUBLISH_USER_ON_PUBLISH:-admin}"
 PUBLISH_PASS_ON_PUBLISH="${PUBLISH_PASS_ON_PUBLISH:-admin}"
+# --- Agent name on Author (pair 0 uses the built-in "publish" agent; extra
+#     pairs get their own agent, e.g. AGENT_NAME=publish1) --------------------
+AGENT_NAME="${AGENT_NAME:-publish}"
 
-echo ">>> 1/3 Configure Author default replication agent → ${PUBLISH_INTERNAL}"
+echo ">>> 1/3 Configure Author replication agent '${AGENT_NAME}' → ${PUBLISH_INTERNAL}"
+# Create the agent page when it doesn't exist (any non-default agent).
+if ! curl -sf -u "${AUTHOR_CREDS}" -o /dev/null \
+  "${AUTHOR_URL}/etc/replication/agents.author/${AGENT_NAME}.json"; then
+  curl -sf -u "${AUTHOR_CREDS}" \
+    "${AUTHOR_URL}/etc/replication/agents.author/${AGENT_NAME}" \
+    -F "jcr:primaryType=cq:Page" > /dev/null
+fi
 curl -sf -u "${AUTHOR_CREDS}" \
-  "${AUTHOR_URL}/etc/replication/agents.author/publish/jcr:content" \
+  "${AUTHOR_URL}/etc/replication/agents.author/${AGENT_NAME}/jcr:content" \
+  -F "jcr:primaryType=nt:unstructured" \
+  -F "jcr:title=Replication ${AGENT_NAME}" \
+  -F "sling:resourceType=cq/replication/components/agent" \
+  -F "cq:template=/libs/cq/replication/templates/agent" \
+  -F "serializationType=durbo" \
+  -F "retryDelay=60000" \
   -F "enabled=true" \
   -F "transportUri=${PUBLISH_INTERNAL}/bin/receive?sling:authRequestLogin=1" \
   -F "transportUser=${PUBLISH_USER_ON_PUBLISH}" \
@@ -54,10 +70,10 @@ echo "    OK"
 
 echo ">>> 3/3 Verify: test author→publish agent connection"
 RESULT=$(curl -sf -u "${AUTHOR_CREDS}" \
-  "${AUTHOR_URL}/etc/replication/agents.author/publish/jcr:content.test.html" | grep -c "succeeded" || true)
+  "${AUTHOR_URL}/etc/replication/agents.author/${AGENT_NAME}/jcr:content.test.html" | grep -c "succeeded" || true)
 if [ "${RESULT}" -ge 1 ]; then
   echo "    Replication test SUCCEEDED"
 else
-  echo "    WARNING: replication test did not report success — check ${AUTHOR_URL}/etc/replication/agents.author/publish.html"
+  echo "    WARNING: replication test did not report success — check ${AUTHOR_URL}/etc/replication/agents.author/${AGENT_NAME}.html"
   exit 1
 fi

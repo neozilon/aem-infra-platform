@@ -1,0 +1,71 @@
+# CI — static validation of everything that can be checked without AWS.
+# Job names (ci-terraform, ci-app) are the required status-check contexts
+# configured on the main branch by bootstrap/.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.15.7"
+
+jobs:
+  terraform:
+    name: ci-terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -recursive -check
+
+      - name: terraform validate (all roots)
+        run: |
+          set -euo pipefail
+          for dir in bootstrap terraform/envs/dev terraform/envs/stage terraform/envs/prod; do
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false -input=false > /dev/null
+            terraform -chdir="$dir" validate -no-color
+            echo "::endgroup::"
+          done
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: |
+          tflint --init > /dev/null
+          tflint --recursive --format compact
+
+      - name: checkov (IaC security scan)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          # Prototype scope: report findings without failing the build; the
+          # security baseline that matters (SSM, IMDSv2, encryption, private
+          # subnets) is asserted by the module code itself.
+          soft_fail: true
+
+  app:
+    name: ci-app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build AEM demo site
+        run: mvn -B -ntp -f demo-site/aemdemo/pom.xml clean package

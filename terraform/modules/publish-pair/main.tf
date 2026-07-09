@@ -71,33 +71,14 @@ resource "aws_iam_instance_profile" "pair" {
 
 # --- Security groups ---------------------------------------------------------
 
+# The pair's SGs reference EACH OTHER (dispatcher renders from publish; publish
+# flushes the dispatcher cache), so rules live in standalone resources — inline
+# ingress blocks would create a dependency cycle between the two SGs.
+
 resource "aws_security_group" "publish" {
   name_prefix = "${var.name_prefix}-publish${local.suffix}-"
   description = "AEM Publish node (pair ${local.suffix})"
   vpc_id      = var.vpc_id
-
-  ingress {
-    description     = "Replication from Author"
-    from_port       = var.publish_port
-    to_port         = var.publish_port
-    protocol        = "tcp"
-    security_groups = [var.author_security_group_id]
-  }
-
-  ingress {
-    description     = "Rendering from the paired Dispatcher"
-    from_port       = var.publish_port
-    to_port         = var.publish_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.dispatcher.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-publish${local.suffix}-sg" })
 
@@ -111,26 +92,64 @@ resource "aws_security_group" "dispatcher" {
   description = "AEM Dispatcher node (pair ${local.suffix})"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "HTTP from the ALB"
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [var.alb_security_group_id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = merge(var.tags, { Name = "${var.name_prefix}-dispatcher${local.suffix}-sg" })
 
   lifecycle {
     create_before_destroy = true
   }
+}
+
+# Publish ingress
+resource "aws_vpc_security_group_ingress_rule" "publish_from_author" {
+  security_group_id            = aws_security_group.publish.id
+  description                  = "Replication from Author"
+  from_port                    = var.publish_port
+  to_port                      = var.publish_port
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.author_security_group_id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "publish_from_dispatcher" {
+  security_group_id            = aws_security_group.publish.id
+  description                  = "Rendering from the paired Dispatcher"
+  from_port                    = var.publish_port
+  to_port                      = var.publish_port
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.dispatcher.id
+}
+
+# Dispatcher ingress
+resource "aws_vpc_security_group_ingress_rule" "dispatcher_from_alb" {
+  security_group_id            = aws_security_group.dispatcher.id
+  description                  = "HTTP from the ALB"
+  from_port                    = 80
+  to_port                      = 80
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.alb_security_group_id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "dispatcher_from_publish" {
+  security_group_id            = aws_security_group.dispatcher.id
+  description                  = "Cache flush from the paired Publish"
+  from_port                    = 80
+  to_port                      = 80
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.publish.id
+}
+
+# Egress (all outbound, both nodes)
+resource "aws_vpc_security_group_egress_rule" "publish_all" {
+  security_group_id = aws_security_group.publish.id
+  description       = "All outbound"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "dispatcher_all" {
+  security_group_id = aws_security_group.dispatcher.id
+  description       = "All outbound"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 # --- Publish node ------------------------------------------------------------

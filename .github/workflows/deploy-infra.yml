@@ -1,0 +1,111 @@
+# Infrastructure deployment per environment (O4).
+#   - push to main touching terraform/** → plan+apply DEV automatically
+#   - stage/prod (and destroy) → manual dispatch, gated by GitHub environment
+#     protection rules (required reviewers) created by bootstrap/
+# Auth: GitHub→AWS OIDC (aws-actions/configure-aws-credentials with a role ARN
+# from the environment-level var AWS_ROLE_ARN — no long-lived keys).
+# Until Phase 8 wires the AWS account (role + vars), the job exits early with
+# a notice instead of failing, keeping the pipeline green but inert.
+name: deploy-infra
+
+on:
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, stage, prod]
+        default: dev
+      action:
+        description: Terraform action
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-infra-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.15.7"
+  TARGET_ENV: ${{ inputs.environment || 'dev' }}
+  TF_ACTION: ${{ inputs.action || 'apply' }}
+
+jobs:
+  terraform:
+    name: terraform-${{ inputs.environment || 'dev' }}
+    runs-on: ubuntu-latest
+    # Environment gates: stage/prod require reviewer approval before this job starts.
+    environment: ${{ inputs.environment || 'dev' }}
+    steps:
+      - name: Check AWS wiring
+        id: aws
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE_ARN" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_ROLE_ARN is not set for environment '$TARGET_ENV' — skipping (AWS wiring lands in Phase 8)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.aws.outputs.configured == 'true'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.aws.outputs.configured == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Fetch licensed binaries from the seed bucket
+        if: steps.aws.outputs.configured == 'true'
+        env:
+          SEED_BUCKET: ${{ vars.BINARIES_SEED_BUCKET }}
+        run: |
+          # The licensed AEM artifacts are never in git. A private "seed"
+          # bucket (uploaded once, manually) provides them to the pipeline;
+          # terraform then copies them into the per-env binaries bucket.
+          if [ -z "$SEED_BUCKET" ]; then
+            echo "::error::BINARIES_SEED_BUCKET var is required for infra deploys."
+            exit 1
+          fi
+          mkdir -p binaries
+          aws s3 sync "s3://$SEED_BUCKET" binaries/ --no-progress
+
+      - uses: hashicorp/setup-terraform@v3
+        if: steps.aws.outputs.configured == 'true'
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform init
+        if: steps.aws.outputs.configured == 'true'
+        run: terraform -chdir="terraform/envs/$TARGET_ENV" init -input=false
+
+      - name: terraform plan
+        if: steps.aws.outputs.configured == 'true'
+        run: |
+          terraform -chdir="terraform/envs/$TARGET_ENV" plan -input=false \
+            -var-file="$TARGET_ENV.tfvars" -out=tfplan
+
+      - name: terraform apply
+        if: steps.aws.outputs.configured == 'true' && env.TF_ACTION == 'apply'
+        run: terraform -chdir="terraform/envs/$TARGET_ENV" apply -input=false tfplan
+
+      - name: terraform destroy
+        if: steps.aws.outputs.configured == 'true' && env.TF_ACTION == 'destroy'
+        run: |
+          terraform -chdir="terraform/envs/$TARGET_ENV" destroy -input=false \
+            -var-file="$TARGET_ENV.tfvars" -auto-approve
+
+      - name: Outputs
+        if: steps.aws.outputs.configured == 'true' && env.TF_ACTION == 'apply'
+        run: terraform -chdir="terraform/envs/$TARGET_ENV" output

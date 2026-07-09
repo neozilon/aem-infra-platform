@@ -59,9 +59,9 @@ variable "required_pr_approvals" {
 }
 
 variable "required_status_checks" {
-  description = "Status-check contexts required before merge (e.g. the CI job names). Empty until ci.yml exists (Phase 6)."
+  description = "Status-check contexts required before merge — the ci.yml job names (Phase 6)."
   type        = list(string)
-  default     = []
+  default     = ["ci-terraform", "ci-app"]
 }
 
 # --- Environments -----------------------------------------------------------

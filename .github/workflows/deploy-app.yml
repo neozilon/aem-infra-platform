@@ -1,0 +1,131 @@
+# Application deployment (O4/O6): build the AEM content packages and install
+# them on the environment's Author and Publish nodes.
+#   - push to main touching demo-site/** → deploy to DEV automatically
+#   - stage/prod → manual dispatch, gated by environment protection rules
+# Instances live in private subnets, so installation goes through SSM
+# send-command: each node pulls the package from the env binaries bucket
+# (its instance role already has read access) and installs it via the CRX
+# Package Manager on localhost.
+name: deploy-app
+
+on:
+  push:
+    branches: [main]
+    paths: ["demo-site/**"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, stage, prod]
+        default: dev
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-app-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  TARGET_ENV: ${{ inputs.environment || 'dev' }}
+
+jobs:
+  build:
+    name: build-package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build all package
+        run: mvn -B -ntp -f demo-site/aemdemo/pom.xml clean package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aemdemo-all
+          path: demo-site/aemdemo/all/target/aemdemo.all-*.zip
+          retention-days: 7
+
+  deploy:
+    name: deploy-${{ inputs.environment || 'dev' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    steps:
+      - name: Check AWS wiring
+        id: aws
+        env:
+          ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
+        run: |
+          if [ -z "$ROLE_ARN" ] || [ -z "$BINARIES_BUCKET" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_ROLE_ARN / BINARIES_BUCKET not set for '$TARGET_ENV' — skipping (Phase 8 wiring)."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.aws.outputs.configured == 'true'
+        with:
+          name: aemdemo-all
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.aws.outputs.configured == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Upload package to the env binaries bucket
+        if: steps.aws.outputs.configured == 'true'
+        env:
+          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
+        run: |
+          PKG=$(ls aemdemo.all-*.zip)
+          echo "PKG=$PKG" >> "$GITHUB_ENV"
+          aws s3 cp "$PKG" "s3://$BINARIES_BUCKET/packages/$PKG"
+
+      - name: Install on Author and Publish via SSM
+        if: steps.aws.outputs.configured == 'true'
+        env:
+          BINARIES_BUCKET: ${{ vars.BINARIES_BUCKET }}
+          ADMIN_PASSWORD: ${{ secrets.AEM_ADMIN_PASSWORD || 'admin' }}
+        run: |
+          set -euo pipefail
+          deploy_to() { # $1 = Role tag, $2 = AEM port
+            local role="$1" port="$2"
+            local ids
+            ids=$(aws ec2 describe-instances \
+              --filters "Name=tag:Role,Values=$role" \
+                        "Name=tag:Environment,Values=$TARGET_ENV" \
+                        "Name=instance-state-name,Values=running" \
+              --query 'Reservations[].Instances[].InstanceId' --output text)
+            if [ -z "$ids" ]; then
+              echo "::error::no running $role instances tagged Environment=$TARGET_ENV"
+              exit 1
+            fi
+            for id in $ids; do
+              echo ">>> installing $PKG on $role $id (port $port)"
+              cmd_id=$(aws ssm send-command \
+                --instance-ids "$id" \
+                --document-name AWS-RunShellScript \
+                --parameters "commands=[
+                  \"aws s3 cp s3://$BINARIES_BUCKET/packages/$PKG /tmp/$PKG\",
+                  \"curl -sf -u admin:$ADMIN_PASSWORD -F file=@/tmp/$PKG -F name=aemdemo-all -F force=true -F install=true http://localhost:$port/crx/packmgr/service.jsp\",
+                  \"rm -f /tmp/$PKG\"
+                ]" \
+                --query 'Command.CommandId' --output text)
+              aws ssm wait command-executed --command-id "$cmd_id" --instance-id "$id"
+              aws ssm get-command-invocation --command-id "$cmd_id" --instance-id "$id" \
+                --query 'StandardOutputContent' --output text
+            done
+          }
+          deploy_to author 4502
+          deploy_to publish 4503
