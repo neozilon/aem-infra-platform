@@ -41,6 +41,7 @@ University final project (Fede Arriola). Automated provisioning + initial deploy
 - Terraform `for_each` cannot iterate a `sensitive` variable directly — wrap the keys in `nonsensitive()` and pull each value from the variable inside the resource (see `bootstrap/main.tf` secret resources)
 - GitHub provider branch-protection resources (`github_branch_protection` AND `_v3`) issue GraphQL actor-`id` queries needing `read:org` scope — they FAIL with a plain `repo+workflow` token. bootstrap sets branch protection via a `null_resource` REST PUT instead (works with repo scope). Empty-valued Actions variables are rejected by GitHub (skip them). If a failed apply leaves `github_branch_protection.default` in state, `terraform state rm` it or every later refresh errors on read:org
 - Pushing to the bootstrapped repo: branch protection blocks force-push even for admins; local git init has history unrelated to GitHub's auto-init README. Reconcile with `git merge -s ours --allow-unrelated-histories FETCH_HEAD` then a normal push (admin bypasses the PR rule with enforce_admins=false)
+- `.gitignore` MUST use root-anchored `/binaries/` — the unanchored `binaries/` also matched `terraform/modules/binaries/` and silently kept the module out of git (CI failed with "Unreadable module directory" while local validate passed)
 
 ## Commands
 
