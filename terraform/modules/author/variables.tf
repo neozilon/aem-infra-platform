@@ -99,8 +99,14 @@ variable "aem_env_runmode" {
   default     = ""
 }
 
+variable "backup_bucket_write_enabled" {
+  description = "Grant the instance role write access to the backup bucket (Tier-2 backups). Separate flag because count must be known at plan time — backup_bucket_arn is computed."
+  type        = bool
+  default     = false
+}
+
 variable "backup_bucket_arn" {
-  description = "ARN of the content-package backup bucket. Non-empty = the instance role may write packages/* there (Tier-2 backups)."
+  description = "ARN of the content-package backup bucket (required when backup_bucket_write_enabled)."
   type        = string
   default     = ""
 }

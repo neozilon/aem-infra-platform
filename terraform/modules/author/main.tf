@@ -64,8 +64,10 @@ resource "aws_iam_role_policy" "binaries_read" {
 }
 
 # Tier-2 backups: allow the Author to upload content packages.
+# count uses the boolean flag, not the ARN — the ARN is computed at apply time
+# and Terraform requires count to be known at plan time.
 data "aws_iam_policy_document" "backup_write" {
-  count = var.backup_bucket_arn != "" ? 1 : 0
+  count = var.backup_bucket_write_enabled ? 1 : 0
 
   statement {
     sid       = "PutPackages"
@@ -75,7 +77,7 @@ data "aws_iam_policy_document" "backup_write" {
 }
 
 resource "aws_iam_role_policy" "backup_write" {
-  count  = var.backup_bucket_arn != "" ? 1 : 0
+  count  = var.backup_bucket_write_enabled ? 1 : 0
   name   = "backup-write"
   role   = aws_iam_role.author.id
   policy = data.aws_iam_policy_document.backup_write[0].json

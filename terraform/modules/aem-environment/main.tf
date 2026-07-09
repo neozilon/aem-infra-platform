@@ -65,7 +65,8 @@ module "author" {
   aem_env_runmode = var.environment
 
   # Tier-2 backups: the Author uploads content packages here.
-  backup_bucket_arn = module.backup.package_bucket_arn
+  backup_bucket_write_enabled = true
+  backup_bucket_arn           = module.backup.package_bucket_arn
 
   tags = local.tags
 }
