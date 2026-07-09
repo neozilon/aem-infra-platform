@@ -10,6 +10,7 @@ University final project (Fede Arriola). Automated provisioning + initial deploy
 - Strategy: local Docker first → real AWS after validation
 - Written report + presentation: **Spanish**. Code/repo/docs: English.
 - 1:1 Publish:Dispatcher scaling via `publish-pair` Terraform module, count-driven
+- AWS budget (Fede, 2026-07-09): **< $100/month target, $200/month hard max**. Destroy-after-evidence discipline; $50 budget alert armed. Phase 8 realistic total: $5-15
 
 ## Current status (2026-07-06)
 
