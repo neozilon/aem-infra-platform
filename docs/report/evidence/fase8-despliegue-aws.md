@@ -35,3 +35,34 @@ Agentes en author: 'publish' (par 0) y 'publish1' (par 1), test SUCCEEDED
 ```
 
 Instancias tras escalar: author, publish0/dispatcher0, publish1/dispatcher1.
+
+## Elasticidad 2→1 — reducción verificada
+
+Tras `publish_pair_count = 1` → push → apply: par 1 terminado, el sitio siguió
+sirviendo 200 por el ALB. Agente colgante `publish1` eliminado del author.
+
+## Hardening en AWS (O5)
+
+```
+configure.yml (harden=true): success
+- contraseña admin rotada en author y publish (verificado por identidad:
+  credencial antigua -> sin identidad; nueva -> "admin")
+- transporte de replicación re-apuntado, test SUCCEEDED
+- sitio público anónimo intacto tras la rotación: 200
+```
+
+## Backups (O5)
+
+```
+Tier 1 — política DLM: policy-08ade9655d6ff0985	ENABLED
+Tier 2 — backup.yml: success
+  s3://aem-dev-pkg-backup-5a509ccd/packages/content-backup-20260709-182515.zip (13.7 KiB)
+```
+
+## Incidencias reales encontradas y corregidas durante la validación
+
+1. Cuenta AWS en "Free plan": RunInstances rechaza tipos no gratuitos → upgrade a plan de pago.
+2. Volumen raíz del Dispatcher 20 GB < mínimo del snapshot AMI AL2023 (30 GB).
+3. Unidad systemd de AEM: bin/start bifurca la JVM y systemd la mataba → java -nofork en primer plano (patrón del entrypoint Docker).
+4. Carrera user-data vs. attachment del volumen EBS (/dev/sdf ausente) → espera del dispositivo en la plantilla.
+5. Orden harden/replicación en configure.yml con secreto ya definido → harden primero.
