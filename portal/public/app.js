@@ -17,15 +17,26 @@ const msg = (id, text, ok = true) => {
   el.className = `msg ${ok ? "ok" : "err"}`;
 };
 
+// --- Theme -------------------------------------------------------------------
+$("btn-theme").onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme
+    ? root.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+};
+
 // --- Login -------------------------------------------------------------------
 $("btn-login").onclick = async () => {
   try {
     await api("/login", { method: "POST", body: JSON.stringify({ user: $("login-user").value, pass: $("login-pass").value }) });
     $("view-login").classList.add("hidden");
     $("view-main").classList.remove("hidden");
+    $("main-tabs").classList.remove("hidden");
     loadConfig(); refreshChecks();
   } catch (e) { msg("login-msg", e.message, false); }
 };
+$("login-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btn-login").click(); });
 
 // --- Tabs ---------------------------------------------------------------------
 const showTab = (name) => {
