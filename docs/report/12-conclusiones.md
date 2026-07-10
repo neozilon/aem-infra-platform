@@ -51,9 +51,12 @@
 
 ## 12.3 Trabajo futuro (línea de tesis)
 
-- **Multi-nube:** reimplementar los módulos `network/author/publish-pair/alb`
-  sobre Azure/GCP manteniendo el módulo de composición y los workflows; medir
-  qué fracción del diseño es portable.
+- **Multi-nube:** reimplementar los módulos de recursos sobre Azure/GCP
+  manteniendo el módulo de composición y los workflows; medir qué fracción del
+  diseño es portable. El **Anexo A** desarrolla el análisis para Azure:
+  correspondencia recurso a recurso, estructura propuesta (`modules/azure/*`
+  con interfaces congeladas) y estimación del 30–40 % del esfuerzo Terraform
+  original hasta la paridad de DEV.
 - **Autoescalado reactivo:** sustituir el `count` por Auto Scaling Groups con
   alarmas (CloudWatch) y registro/desregistro automático de pares, incluyendo
   el cableado dinámico de replicación.

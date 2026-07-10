@@ -22,6 +22,7 @@ documento final (.docx) en la Fase 10. Estado: ✅ borrador listo · 🔶 parcia
 | 10 | Pruebas y validación en AWS | `fase8-validacion-aws.md` | ✅ |
 | 11 | Resultados y análisis de objetivos O1–O7 | `11-resultados.md` | ✅ |
 | 12 | Conclusiones y trabajo futuro | `12-conclusiones.md` | ✅ |
+| — | Anexo A: portabilidad a Azure | `anexo-a-portabilidad-azure.md` | ✅ |
 | — | Anexos: evidencia | `evidence/` | ✅ |
 
 ## Mapa objetivos → evidencia
